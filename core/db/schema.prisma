@@ -1,0 +1,262 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "./generated"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum TipoTransaccion {
+  ingreso
+  gasto
+  transferencia
+  ajuste
+}
+
+enum TipoCuenta {
+  efectivo
+  banco
+  billetera
+}
+
+enum ScopeCategoria {
+  finanzas
+  compras
+  ambas
+}
+
+enum TipoRecurrente {
+  sueldo
+  alquiler
+  servicio
+  suscripcion
+  cuota
+  gasto_fijo
+}
+
+enum EstadoRecurrente {
+  activo
+  atrasado
+  pausado
+  finalizado
+}
+
+enum Frecuencia {
+  quincenal
+  mensual
+  anual
+  unica
+}
+
+enum EstadoDeuda {
+  pendiente
+  pagada
+  vencida
+  condonada
+}
+
+enum PrioridadCompra {
+  P0
+  P1
+  P2
+  P3
+  P4
+  P5
+}
+
+enum EstadoCompra {
+  pendiente
+  activo
+  comprado
+  bloqueado
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  nombre       String
+  createdAt    DateTime @default(now())
+
+  sesiones      Session[]
+  cuentas       Account[]
+  transacciones Transaction[]
+  recurrentes   RecurringItem[]
+  deudas        Debt[]
+  metas         SavingsGoal[]
+  compras       PurchaseItem[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  usuarioId String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  usuario User @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+}
+
+model Settings {
+  id               String   @id @default("default")
+  moneda           String   @default("ARS")
+  locale           String   @default("es-AR")
+  timezone         String   @default("America/Argentina/Buenos_Aires")
+  topeOcioCentavos Int?
+  updatedAt        DateTime @updatedAt
+}
+
+model Holiday {
+  fecha       String @id
+  descripcion String
+  anio        Int
+  externalId  String @unique
+
+  @@index([anio])
+}
+
+model Category {
+  id         String         @id @default(cuid())
+  nombre     String
+  scope      ScopeCategoria
+  padreId    String?
+  externalId String         @unique
+
+  padre         Category?       @relation("ArbolCategorias", fields: [padreId], references: [id])
+  hijos         Category[]      @relation("ArbolCategorias")
+  transacciones Transaction[]
+  recurrentes   RecurringItem[]
+  compras       PurchaseItem[]
+
+  @@unique([padreId, nombre])
+}
+
+model Account {
+  id         String     @id @default(cuid())
+  usuarioId  String
+  nombre     String
+  tipo       TipoCuenta
+  externalId String?    @unique
+  createdAt  DateTime   @default(now())
+
+  usuario       User          @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  transacciones Transaction[]
+
+  @@index([usuarioId])
+}
+
+model Transaction {
+  id            String          @id @default(cuid())
+  usuarioId     String
+  cuentaId      String?
+  tipo          TipoTransaccion
+  montoCentavos Int
+  fecha         String
+  quincena      String
+  descripcion   String
+  categoriaId   String?
+  origenTipo    String?
+  origenId      String?
+  externalId    String?         @unique
+  createdAt     DateTime        @default(now())
+
+  usuario   User      @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  cuenta    Account?  @relation(fields: [cuentaId], references: [id])
+  categoria Category? @relation(fields: [categoriaId], references: [id])
+
+  @@unique([origenTipo, origenId])
+  @@index([usuarioId, fecha])
+  @@index([usuarioId, quincena])
+}
+
+model RecurringItem {
+  id            String           @id @default(cuid())
+  usuarioId     String
+  nombre        String
+  tipo          TipoRecurrente
+  frecuencia    Frecuencia
+  montoCentavos Int?
+  montoTexto    String?
+  estado        EstadoRecurrente @default(activo)
+  diaDePago     Int?
+  desde         String
+  hasta         String?
+  categoriaId   String?
+  externalId    String           @unique
+  createdAt     DateTime         @default(now())
+
+  usuario   User      @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  categoria Category? @relation(fields: [categoriaId], references: [id])
+
+  @@index([usuarioId, tipo])
+}
+
+model Debt {
+  id            String      @id @default(cuid())
+  usuarioId     String
+  acreedor      String
+  montoCentavos Int?
+  montoTexto    String?
+  vencimiento   String?
+  periodo       String?
+  estado        EstadoDeuda @default(pendiente)
+  nota          String?
+  externalId    String      @unique
+  createdAt     DateTime    @default(now())
+
+  usuario User @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@unique([usuarioId, acreedor, periodo])
+  @@index([usuarioId, estado])
+}
+
+model SavingsGoal {
+  id                    String     @id @default(cuid())
+  usuarioId             String
+  nombre                String
+  montoObjetivoCentavos Int?
+  montoObjetivoTexto    String?
+  montoActualCentavos   Int        @default(0)
+  aporteCentavos        Int?
+  frecuenciaAporte      Frecuencia @default(quincenal)
+  padreId               String?
+  activo                Boolean    @default(true)
+  externalId            String     @unique
+  createdAt             DateTime   @default(now())
+
+  usuario User           @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  padre   SavingsGoal?   @relation("ArbolMetas", fields: [padreId], references: [id])
+  hijos   SavingsGoal[]  @relation("ArbolMetas")
+  compras PurchaseItem[]
+
+  @@unique([usuarioId, nombre])
+}
+
+model PurchaseItem {
+  id                     String          @id @default(cuid())
+  usuarioId              String
+  nombre                 String
+  prioridad              PrioridadCompra
+  estado                 EstadoCompra    @default(pendiente)
+  precioEstimadoCentavos Int?
+  precioEstimadoTexto    String?
+  link                   String?
+  nota                   String?
+  categoriaId            String?
+  linkedGoalId           String?
+  quincena               String?
+  compradoEn             String?
+  externalId             String          @unique
+  createdAt              DateTime        @default(now())
+
+  usuario   User         @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  categoria Category?    @relation(fields: [categoriaId], references: [id])
+  meta      SavingsGoal? @relation(fields: [linkedGoalId], references: [id])
+
+  @@index([usuarioId, prioridad])
+  @@index([usuarioId, estado])
+}
